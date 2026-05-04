@@ -1,4 +1,4 @@
-"""Card Scanner — Streamlit UI (cloud version)."""
+"""Card Scanner — Streamlit UI (cloud version with Google login)."""
 
 import os
 import streamlit as st
@@ -33,25 +33,42 @@ FIELDS = [
 ]
 
 
-def fake_login_gate():
-    if st.session_state.get("user_email"):
-        return st.session_state["user_email"]
-    st.title("Card Scanner - Login")
-    st.info("Phase 3 testing mode: type your whitelisted email.")
-    email = st.text_input("Your email", placeholder="you@gmail.com")
-    if st.button("Log in", type="primary"):
-        if not email:
-            st.error("Enter an email.")
-            st.stop()
-        if not db.is_allowed_user(email.strip().lower()):
-            st.error(f"'{email}' is not in the allowed users list.")
-            st.stop()
-        st.session_state["user_email"] = email.strip().lower()
-        st.rerun()
-    st.stop()
+def google_login_gate():
+    """Real Google login. Streamlit handles OAuth via st.login()."""
+    if not st.user.is_logged_in:
+        st.title("Card Scanner")
+        st.caption("Personal business card database with smart OCR")
+        st.markdown("---")
+        st.info(
+            "This app is restricted to authorized users only. "
+            "Sign in with your Google account to continue. "
+            "If you are not authorized, please contact the admin."
+        )
+        if st.button("Sign in with Google", type="primary"):
+            st.login()
+        st.stop()
+
+    user_email = (st.user.email or "").strip().lower()
+
+    if not user_email:
+        st.error("Could not read your email from Google. Please try logging out and back in.")
+        if st.button("Log out"):
+            st.logout()
+        st.stop()
+
+    if not db.is_allowed_user(user_email):
+        st.error(
+            f"Access denied. The email '{user_email}' is not on the allowed users list. "
+            f"Please contact the admin to be added."
+        )
+        if st.button("Log out and try a different account"):
+            st.logout()
+        st.stop()
+
+    return user_email
 
 
-user_email = fake_login_gate()
+user_email = google_login_gate()
 
 
 def render_edit_form(prefix, initial, allow_notes=True):
@@ -80,10 +97,11 @@ def render_edit_form(prefix, initial, allow_notes=True):
 
 with st.sidebar:
     st.title("Card Scanner")
-    st.caption(f"Logged in as: **{user_email}**")
+    user_name = st.user.name if hasattr(st.user, "name") else user_email
+    st.caption(f"Logged in as: **{user_name}**")
+    st.caption(f"({user_email})")
     if st.button("Log out"):
-        st.session_state.pop("user_email", None)
-        st.rerun()
+        st.logout()
     st.markdown("---")
     st.metric("My Contacts", db.get_count(user_email))
     st.markdown("---")
