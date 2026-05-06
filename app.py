@@ -2,6 +2,7 @@
 
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from urllib.parse import urlencode
 
@@ -40,14 +41,11 @@ FIELDS = [
 def supabase_login_gate():
     """Google login via Supabase Auth.
 
-    Flow:
-    1. User clicks 'Sign in with Google' button
-    2. Browser goes to Supabase, which redirects to Google
-    3. After Google login, Supabase redirects back to APP_URL with tokens in URL hash
-    4. JavaScript reads the tokens from the hash and reloads the page with them as query params
-    5. We read the access_token query param, fetch the user from Supabase, and store in session
+    Supabase returns the token in the URL fragment (#access_token=...).
+    We use a JavaScript snippet to detect this and redirect to the same URL
+    with the token as a query parameter, which Streamlit can read.
     """
-    # Already logged in this session
+    # If already logged in, just check whitelist
     if "user_email" in st.session_state and st.session_state["user_email"]:
         user_email = st.session_state["user_email"]
         if db.is_allowed_user(user_email):
@@ -62,12 +60,11 @@ def supabase_login_gate():
                 st.rerun()
             st.stop()
 
-    # Check if Supabase redirected us back with an access token in the URL
+    # Check if we already have token as query param (after JS redirect)
     query_params = st.query_params
     access_token = query_params.get("access_token")
 
     if access_token:
-        # Got token from Supabase - fetch user info
         try:
             user_info = db.get_user_from_token(access_token)
             user_email = (user_info.get("email") or "").strip().lower()
@@ -75,7 +72,6 @@ def supabase_login_gate():
                 st.error("Could not read your email from Google. Please try again.")
                 st.stop()
 
-            # Store in session and clear URL
             st.session_state["user_email"] = user_email
             st.query_params.clear()
             st.rerun()
@@ -83,7 +79,29 @@ def supabase_login_gate():
             st.error(f"Login failed: {e}")
             st.stop()
 
-    # Not logged in - show login page
+    # Inject JS to convert URL hash to query params
+    # This runs in an iframe but accesses parent window
+    components.html(
+        """
+        <script>
+        (function() {
+            try {
+                var parentWin = window.parent;
+                var hash = parentWin.location.hash;
+                if (hash && hash.indexOf('access_token') !== -1) {
+                    var params = hash.substring(1);
+                    var newUrl = parentWin.location.pathname + '?' + params;
+                    parentWin.location.replace(newUrl);
+                }
+            } catch (e) {
+                console.error('Auth redirect error:', e);
+            }
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
     st.title("Card Scanner")
     st.caption("Personal business card database with smart OCR")
     st.markdown("---")
@@ -93,27 +111,13 @@ def supabase_login_gate():
         "If you are not authorized, please contact the admin."
     )
 
-    # Build the Supabase OAuth URL
     supabase_url = st.secrets["SUPABASE_URL"]
     oauth_url = f"{supabase_url}/auth/v1/authorize?" + urlencode({
         "provider": "google",
         "redirect_to": APP_URL,
     })
 
-    # Use a link styled as a button (st.link_button works better than st.button + redirect)
     st.link_button("Sign in with Google", oauth_url, type="primary")
-
-    # JavaScript to convert the URL hash (#access_token=...) into query params (?access_token=...)
-    # Supabase returns tokens in the URL hash, but Streamlit can only read query params
-    st.markdown("""
-        <script>
-        if (window.location.hash && window.location.hash.includes('access_token')) {
-            const hash = window.location.hash.substring(1);
-            const newUrl = window.location.pathname + '?' + hash;
-            window.location.replace(newUrl);
-        }
-        </script>
-    """, unsafe_allow_html=True)
 
     st.stop()
 
