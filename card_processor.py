@@ -23,6 +23,19 @@ import cloud_db
 
 load_dotenv()
 
+# Try to load Streamlit secrets too (so this works in Streamlit Cloud)
+try:
+    import streamlit as st
+    _streamlit_secrets = dict(st.secrets) if hasattr(st, "secrets") else {}
+except Exception:
+    _streamlit_secrets = {}
+
+
+def _get_secret(key: str) -> str:
+    """Look up a secret in env vars first, then Streamlit secrets."""
+    return os.getenv(key) or _streamlit_secrets.get(key, "")
+
+
 MAX_UPLOAD_DIM = 2000
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = [2, 4, 8]
@@ -268,9 +281,9 @@ def _gemini_generate_with_retry(client, image_bytes, prompt,
 
 
 def extract_all_cards_from_page(pil_image):
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = _get_secret("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set in .env")
+        raise RuntimeError("GEMINI_API_KEY not set in environment or Streamlit secrets")
 
     client = genai.Client(api_key=api_key)
     resized = resize_for_upload(pil_image)
@@ -293,9 +306,9 @@ def extract_all_cards_from_page(pil_image):
 
 
 def extract_single_card(pil_image):
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = _get_secret("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set in .env")
+        raise RuntimeError("GEMINI_API_KEY not set in environment or Streamlit secrets")
 
     client = genai.Client(api_key=api_key)
     resized = resize_for_upload(pil_image, max_dim=1500)
