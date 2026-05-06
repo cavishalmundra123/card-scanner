@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+streamlit_secrets.txt
+*.secrets
 
 # Virtual environment
 venv/
@@ -28,5 +30,20 @@ Thumbs.db
 
 # Helper scripts (not part of the app)
 write_app.py
+write_app_v2.py
 test_setup.py
 test_supabase.py
+make_secrets.py
+
+# Word/Office files
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.pptx
+*.ppt
+~$*
+
+# OAuth client secret JSON files (in case you saved one)
+client_secret_*.json
+*credentials*.json
