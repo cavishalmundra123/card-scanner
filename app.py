@@ -1,10 +1,11 @@
 """Card Scanner - Streamlit UI (cloud version with Supabase Google login)."""
 
 import os
+import re
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 
 import cloud_db as db
 from card_processor import process_file, SERVICE_CATEGORIES
@@ -38,12 +39,24 @@ FIELDS = [
 ]
 
 
+def extract_token_from_url(url_or_hash: str) -> str:
+    """Extract the access_token from a pasted URL or hash fragment."""
+    if not url_or_hash:
+        return ""
+    text = url_or_hash.strip()
+    # Try to find access_token in the string
+    match = re.search(r"access_token=([^&]+)", text)
+    if match:
+        return match.group(1)
+    return ""
+
+
 def supabase_login_gate():
     """Google login via Supabase Auth.
 
-    Supabase returns the token in the URL fragment (#access_token=...).
-    We use a JavaScript snippet to detect this and redirect to the same URL
-    with the token as a query parameter, which Streamlit can read.
+    Streamlit Cloud's iframe sandbox blocks JS from reading the URL hash,
+    so we use a manual paste flow: user logs in via Google, gets redirected
+    back with token in URL hash, then copies the URL into a paste box.
     """
     # If already logged in, just check whitelist
     if "user_email" in st.session_state and st.session_state["user_email"]:
@@ -60,56 +73,10 @@ def supabase_login_gate():
                 st.rerun()
             st.stop()
 
-    # Check if we already have token as query param (after JS redirect)
-    query_params = st.query_params
-    access_token = query_params.get("access_token")
-
-    if access_token:
-        try:
-            user_info = db.get_user_from_token(access_token)
-            user_email = (user_info.get("email") or "").strip().lower()
-            if not user_email:
-                st.error("Could not read your email from Google. Please try again.")
-                st.stop()
-
-            st.session_state["user_email"] = user_email
-            st.query_params.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Login failed: {e}")
-            st.stop()
-
-    # Inject JS to convert URL hash to query params
-    # This runs in an iframe but accesses parent window
-    components.html(
-        """
-        <script>
-        (function() {
-            try {
-                var parentWin = window.parent;
-                var hash = parentWin.location.hash;
-                if (hash && hash.indexOf('access_token') !== -1) {
-                    var params = hash.substring(1);
-                    var newUrl = parentWin.location.pathname + '?' + params;
-                    parentWin.location.replace(newUrl);
-                }
-            } catch (e) {
-                console.error('Auth redirect error:', e);
-            }
-        })();
-        </script>
-        """,
-        height=0,
-    )
-
+    # Not logged in - show login page with paste box
     st.title("Card Scanner")
     st.caption("Personal business card database with smart OCR")
     st.markdown("---")
-    st.info(
-        "This app is restricted to authorized users only. "
-        "Sign in with your Google account to continue. "
-        "If you are not authorized, please contact the admin."
-    )
 
     supabase_url = st.secrets["SUPABASE_URL"]
     oauth_url = f"{supabase_url}/auth/v1/authorize?" + urlencode({
@@ -117,7 +84,44 @@ def supabase_login_gate():
         "redirect_to": APP_URL,
     })
 
+    st.subheader("Step 1: Sign in with Google")
     st.link_button("Sign in with Google", oauth_url, type="primary")
+
+    st.markdown("---")
+
+    st.subheader("Step 2: Paste the URL after Google sends you back")
+    st.caption(
+        "After clicking 'Sign in with Google' above, you'll be redirected to Google, "
+        "then back here. The page will look the same, but the URL in your browser "
+        "address bar will contain a long token (starting with `#access_token=...`). "
+        "**Copy the entire URL from the address bar and paste it below.**"
+    )
+
+    pasted_url = st.text_area(
+        "Paste the URL here",
+        placeholder="https://card-scanner-vishal.streamlit.app/#access_token=...",
+        height=100,
+        key="oauth_url_paste",
+    )
+
+    if st.button("Complete Login", type="primary"):
+        token = extract_token_from_url(pasted_url)
+        if not token:
+            st.error("Could not find access_token in the pasted URL. Make sure you copied the full URL after Google login.")
+            st.stop()
+
+        try:
+            user_info = db.get_user_from_token(token)
+            user_email = (user_info.get("email") or "").strip().lower()
+            if not user_email:
+                st.error("Could not read your email from Google. Please try again.")
+                st.stop()
+
+            st.session_state["user_email"] = user_email
+            st.rerun()
+        except Exception as e:
+            st.error(f"Login failed: {e}")
+            st.stop()
 
     st.stop()
 
