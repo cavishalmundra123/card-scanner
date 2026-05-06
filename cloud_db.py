@@ -6,6 +6,7 @@ Drop-in replacement for the old database.py. All functions take an extra
 
 import os
 import io
+import requests
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
@@ -14,9 +15,23 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-# ────────────────────────────────────────────────────────────
+# Try to load Streamlit secrets too (so this works in Streamlit Cloud
+# where there is no .env file)
+try:
+    import streamlit as st
+    _streamlit_secrets = dict(st.secrets) if hasattr(st, "secrets") else {}
+except Exception:
+    _streamlit_secrets = {}
+
+
+def _get_secret(key: str) -> str:
+    """Look up a secret in environment first, then Streamlit secrets."""
+    return os.getenv(key) or _streamlit_secrets.get(key, "")
+
+
+# ---------------------------------------------------------------------------
 # Connection (cached singleton)
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 _client: Client | None = None
 
@@ -25,17 +40,47 @@ def get_client() -> Client:
     """Return a singleton Supabase client."""
     global _client
     if _client is None:
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_ANON_KEY")
+        url = _get_secret("SUPABASE_URL")
+        key = _get_secret("SUPABASE_ANON_KEY")
         if not url or not key:
             raise RuntimeError("SUPABASE_URL or SUPABASE_ANON_KEY missing")
         _client = create_client(url, key)
     return _client
 
 
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Auth helpers (Supabase Google OAuth)
+# ---------------------------------------------------------------------------
+
+def get_user_from_token(access_token: str) -> dict:
+    """Given a Supabase access_token, fetch the user's profile.
+
+    Returns a dict with keys like 'email', 'id', 'user_metadata', etc.
+    Raises if the token is invalid.
+    """
+    if not access_token:
+        raise ValueError("No access token provided")
+
+    url = _get_secret("SUPABASE_URL")
+    anon_key = _get_secret("SUPABASE_ANON_KEY")
+    if not url or not anon_key:
+        raise RuntimeError("SUPABASE_URL or SUPABASE_ANON_KEY missing")
+
+    response = requests.get(
+        f"{url}/auth/v1/user",
+        headers={
+            "apikey": anon_key,
+            "Authorization": f"Bearer {access_token}",
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+# ---------------------------------------------------------------------------
 # Whitelist check
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 def is_allowed_user(email: str) -> bool:
     """Check if the given email is in the allowed_users whitelist."""
@@ -46,9 +91,9 @@ def is_allowed_user(email: str) -> bool:
     return len(result.data) > 0
 
 
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Insert / Update / Delete (always scoped to user_email)
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 CONTACT_FIELDS = [
     "full_name", "designation", "company_name", "service_category",
@@ -87,9 +132,9 @@ def delete_contact(user_email: str, contact_id: int):
         .execute()
 
 
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Search / Read
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 def search_contacts(user_email: str, category=None, country=None,
                     city=None, area=None, keyword=None) -> list:
@@ -150,9 +195,9 @@ def get_distinct_values(user_email: str, column: str) -> list:
     return sorted(values)
 
 
-# ────────────────────────────────────────────────────────────
-# Excel export (in-memory bytes — no local files)
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Excel export (in-memory bytes - no local files)
+# ---------------------------------------------------------------------------
 
 EXPORT_COLUMNS = [
     ("id", "ID"),
@@ -229,9 +274,9 @@ def build_excel_bytes(user_email: str) -> bytes:
     return buf.read()
 
 
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Storage helpers (card images)
-# ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 BUCKET_NAME = "card-images"
 
@@ -240,7 +285,7 @@ def upload_card_image(user_email: str, image_bytes: bytes,
                       filename: str) -> str:
     """Upload an image to storage. Returns the storage path."""
     sb = get_client()
-    # Path format: {user_email}/{filename} — keeps each user's images separate
+    # Path format: {user_email}/{filename} - keeps each user's images separate
     safe_email = user_email.replace("@", "_at_").replace(".", "_")
     storage_path = f"{safe_email}/{filename}"
 
