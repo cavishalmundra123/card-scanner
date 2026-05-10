@@ -40,22 +40,16 @@ FIELDS = [
 ]
 
 
-@st.cache_resource
-def load_authenticator():
-    """Load credentials from credentials.yaml and build the authenticator."""
-    with open("credentials.yaml", "r", encoding="utf-8") as f:
-        config = yaml.load(f, Loader=SafeLoader)
+# Load credentials and build authenticator (NO caching - cookies need fresh init)
+with open("credentials.yaml", "r", encoding="utf-8") as f:
+    config = yaml.load(f, Loader=SafeLoader)
 
-    authenticator = stauth.Authenticate(
-        config["credentials"],
-        config["cookie"]["name"],
-        config["cookie"]["key"],
-        config["cookie"]["expiry_days"],
-    )
-    return authenticator, config
-
-
-authenticator, config = load_authenticator()
+authenticator = stauth.Authenticate(
+    config["credentials"],
+    config["cookie"]["name"],
+    config["cookie"]["key"],
+    config["cookie"]["expiry_days"],
+)
 
 # Render the login form
 try:
