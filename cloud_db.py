@@ -15,8 +15,7 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-# Try to load Streamlit secrets too (so this works in Streamlit Cloud
-# where there is no .env file)
+# Try to load Streamlit secrets too (so this works in Streamlit Cloud)
 try:
     import streamlit as st
     _streamlit_secrets = dict(st.secrets) if hasattr(st, "secrets") else {}
@@ -76,6 +75,52 @@ def get_user_from_token(access_token: str) -> dict:
     )
     response.raise_for_status()
     return response.json()
+
+
+def exchange_code_for_user(code: str, code_verifier: str) -> dict:
+    """Exchange a PKCE authorization code for a user session.
+
+    This is the server-side leg of the PKCE flow:
+    1. App generated a code_verifier + code_challenge before redirect
+    2. Supabase redirected back with ?code=...
+    3. We POST {code, code_verifier} to /auth/v1/token, get {access_token, ...}
+    4. We use the access_token to fetch the user's profile
+    """
+    if not code or not code_verifier:
+        raise ValueError("Missing code or code_verifier")
+
+    url = _get_secret("SUPABASE_URL")
+    anon_key = _get_secret("SUPABASE_ANON_KEY")
+    if not url or not anon_key:
+        raise RuntimeError("SUPABASE_URL or SUPABASE_ANON_KEY missing")
+
+    # Step 1: Exchange code for access token
+    token_response = requests.post(
+        f"{url}/auth/v1/token?grant_type=pkce",
+        headers={
+            "apikey": anon_key,
+            "Content-Type": "application/json",
+        },
+        json={
+            "auth_code": code,
+            "code_verifier": code_verifier,
+        },
+        timeout=15,
+    )
+
+    if token_response.status_code != 200:
+        raise RuntimeError(
+            f"Token exchange failed ({token_response.status_code}): "
+            f"{token_response.text}"
+        )
+
+    token_data = token_response.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise RuntimeError(f"No access_token in response: {token_data}")
+
+    # Step 2: Use token to fetch user profile
+    return get_user_from_token(access_token)
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +197,6 @@ def search_contacts(user_email: str, category=None, country=None,
         q = q.ilike("area", f"%{area.strip()}%")
     if keyword and keyword.strip():
         kw = keyword.strip()
-        # Supabase doesn't have a clean multi-column OR; do client-side filter.
         result = q.order("created_at", desc=True).execute()
         kw_lower = kw.lower()
         return [
@@ -285,7 +329,6 @@ def upload_card_image(user_email: str, image_bytes: bytes,
                       filename: str) -> str:
     """Upload an image to storage. Returns the storage path."""
     sb = get_client()
-    # Path format: {user_email}/{filename} - keeps each user's images separate
     safe_email = user_email.replace("@", "_at_").replace(".", "_")
     storage_path = f"{safe_email}/{filename}"
 
@@ -319,7 +362,7 @@ def delete_card_image(storage_path: str):
     try:
         sb.storage.from_(BUCKET_NAME).remove([storage_path])
     except Exception:
-        pass  # silently ignore missing files
+        pass
 
 
 if __name__ == "__main__":

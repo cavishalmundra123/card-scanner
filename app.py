@@ -1,11 +1,12 @@
-"""Card Scanner - Streamlit UI (cloud version with Supabase Google login)."""
+"""Card Scanner - Streamlit UI (cloud version with Supabase Google login via PKCE)."""
 
 import os
-import re
+import secrets as pysecrets
+import hashlib
+import base64
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import urlencode
 
 import cloud_db as db
 from card_processor import process_file, SERVICE_CATEGORIES
@@ -39,26 +40,24 @@ FIELDS = [
 ]
 
 
-def extract_token_from_url(url_or_hash: str) -> str:
-    """Extract the access_token from a pasted URL or hash fragment."""
-    if not url_or_hash:
-        return ""
-    text = url_or_hash.strip()
-    # Try to find access_token in the string
-    match = re.search(r"access_token=([^&]+)", text)
-    if match:
-        return match.group(1)
-    return ""
+def generate_pkce_pair():
+    """Generate a PKCE code_verifier and code_challenge pair."""
+    verifier = pysecrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return verifier, challenge
 
 
 def supabase_login_gate():
-    """Google login via Supabase Auth.
+    """Google login via Supabase Auth using PKCE flow.
 
-    Streamlit Cloud's iframe sandbox blocks JS from reading the URL hash,
-    so we use a manual paste flow: user logs in via Google, gets redirected
-    back with token in URL hash, then copies the URL into a paste box.
+    PKCE flow:
+    1. Generate verifier + challenge pair
+    2. Send user to Supabase OAuth with the challenge
+    3. Supabase redirects back with ?code=...
+    4. We exchange the code + verifier for a session (server-side)
     """
-    # If already logged in, just check whitelist
+    # Already logged in this session
     if "user_email" in st.session_state and st.session_state["user_email"]:
         user_email = st.session_state["user_email"]
         if db.is_allowed_user(user_email):
@@ -73,55 +72,74 @@ def supabase_login_gate():
                 st.rerun()
             st.stop()
 
-    # Not logged in - show login page with paste box
-    st.title("Card Scanner")
-    st.caption("Personal business card database with smart OCR")
-    st.markdown("---")
+    # Check if Supabase redirected back with a code
+    query_params = st.query_params
+    code = query_params.get("code")
 
-    supabase_url = st.secrets["SUPABASE_URL"]
-    oauth_url = f"{supabase_url}/auth/v1/authorize?" + urlencode({
-        "provider": "google",
-        "redirect_to": APP_URL,
-    })
-
-    st.subheader("Step 1: Sign in with Google")
-    st.link_button("Sign in with Google", oauth_url, type="primary")
-
-    st.markdown("---")
-
-    st.subheader("Step 2: Paste the URL after Google sends you back")
-    st.caption(
-        "After clicking 'Sign in with Google' above, you'll be redirected to Google, "
-        "then back here. The page will look the same, but the URL in your browser "
-        "address bar will contain a long token (starting with `#access_token=...`). "
-        "**Copy the entire URL from the address bar and paste it below.**"
-    )
-
-    pasted_url = st.text_area(
-        "Paste the URL here",
-        placeholder="https://card-scanner-vishal.streamlit.app/#access_token=...",
-        height=100,
-        key="oauth_url_paste",
-    )
-
-    if st.button("Complete Login", type="primary"):
-        token = extract_token_from_url(pasted_url)
-        if not token:
-            st.error("Could not find access_token in the pasted URL. Make sure you copied the full URL after Google login.")
+    if code:
+        # We have a code - exchange it for a session
+        verifier = st.session_state.get("pkce_verifier")
+        if not verifier:
+            st.error(
+                "Login session expired. Please click 'Sign in with Google' again."
+            )
+            st.query_params.clear()
+            if st.button("Try again"):
+                st.rerun()
             st.stop()
 
         try:
-            user_info = db.get_user_from_token(token)
+            user_info = db.exchange_code_for_user(code, verifier)
             user_email = (user_info.get("email") or "").strip().lower()
             if not user_email:
                 st.error("Could not read your email from Google. Please try again.")
                 st.stop()
 
             st.session_state["user_email"] = user_email
+            # Clear the verifier and URL
+            st.session_state.pop("pkce_verifier", None)
+            st.query_params.clear()
             st.rerun()
         except Exception as e:
             st.error(f"Login failed: {e}")
+            st.query_params.clear()
+            if st.button("Try again"):
+                st.session_state.pop("pkce_verifier", None)
+                st.rerun()
             st.stop()
+
+    # Not logged in - show login page
+    st.title("Card Scanner")
+    st.caption("Personal business card database with smart OCR")
+    st.markdown("---")
+    st.info(
+        "This app is restricted to authorized users only. "
+        "Sign in with your Google account to continue. "
+        "If you are not authorized, please contact the admin."
+    )
+
+    # Generate PKCE pair and store verifier in session
+    if "pkce_verifier" not in st.session_state:
+        verifier, challenge = generate_pkce_pair()
+        st.session_state["pkce_verifier"] = verifier
+        st.session_state["pkce_challenge"] = challenge
+    else:
+        challenge = st.session_state.get("pkce_challenge")
+        if not challenge:
+            verifier, challenge = generate_pkce_pair()
+            st.session_state["pkce_verifier"] = verifier
+            st.session_state["pkce_challenge"] = challenge
+
+    # Build the Supabase OAuth URL with PKCE params
+    supabase_url = st.secrets["SUPABASE_URL"]
+    oauth_url = f"{supabase_url}/auth/v1/authorize?" + urlencode({
+        "provider": "google",
+        "redirect_to": APP_URL,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    })
+
+    st.link_button("Sign in with Google", oauth_url, type="primary")
 
     st.stop()
 
