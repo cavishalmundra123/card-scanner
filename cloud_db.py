@@ -77,52 +77,6 @@ def get_user_from_token(access_token: str) -> dict:
     return response.json()
 
 
-def exchange_code_for_user(code: str, code_verifier: str) -> dict:
-    """Exchange a PKCE authorization code for a user session.
-
-    This is the server-side leg of the PKCE flow:
-    1. App generated a code_verifier + code_challenge before redirect
-    2. Supabase redirected back with ?code=...
-    3. We POST {code, code_verifier} to /auth/v1/token, get {access_token, ...}
-    4. We use the access_token to fetch the user's profile
-    """
-    if not code or not code_verifier:
-        raise ValueError("Missing code or code_verifier")
-
-    url = _get_secret("SUPABASE_URL")
-    anon_key = _get_secret("SUPABASE_ANON_KEY")
-    if not url or not anon_key:
-        raise RuntimeError("SUPABASE_URL or SUPABASE_ANON_KEY missing")
-
-    # Step 1: Exchange code for access token
-    token_response = requests.post(
-        f"{url}/auth/v1/token?grant_type=pkce",
-        headers={
-            "apikey": anon_key,
-            "Content-Type": "application/json",
-        },
-        json={
-            "auth_code": code,
-            "code_verifier": code_verifier,
-        },
-        timeout=15,
-    )
-
-    if token_response.status_code != 200:
-        raise RuntimeError(
-            f"Token exchange failed ({token_response.status_code}): "
-            f"{token_response.text}"
-        )
-
-    token_data = token_response.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        raise RuntimeError(f"No access_token in response: {token_data}")
-
-    # Step 2: Use token to fetch user profile
-    return get_user_from_token(access_token)
-
-
 # ---------------------------------------------------------------------------
 # Whitelist check
 # ---------------------------------------------------------------------------
