@@ -1,15 +1,15 @@
-"""Card Scanner - Streamlit UI (cloud version with Supabase Google login).
+"""Card Scanner - Streamlit UI with username+password authentication.
 
-Login flow: paste-based (works on Streamlit Cloud) + JS helper that
-auto-detects the URL hash and shows it to the user for one-click login.
+Auth: streamlit-authenticator (local YAML credentials, bcrypt hashed).
+Per-user data isolation: stored in cloud_db using user_email from credentials.
 """
 
 import os
-import re
+import yaml
+from yaml.loader import SafeLoader
 import streamlit as st
-import streamlit.components.v1 as components
+import streamlit_authenticator as stauth
 import pandas as pd
-from urllib.parse import urlencode
 
 import cloud_db as db
 from card_processor import process_file, SERVICE_CATEGORIES
@@ -18,9 +18,6 @@ st.set_page_config(page_title="Card Scanner", page_icon="CARD", layout="wide")
 
 UPLOAD_TMP = os.path.join("data", "_uploads")
 os.makedirs(UPLOAD_TMP, exist_ok=True)
-
-# The public URL of your deployed app (where Supabase sends users back)
-APP_URL = "https://card-scanner-vishal.streamlit.app"
 
 FIELDS = [
     ("full_name", "Full Name"),
@@ -43,187 +40,48 @@ FIELDS = [
 ]
 
 
-def extract_token_from_url(url_or_hash: str) -> str:
-    """Extract the access_token from a pasted URL or hash fragment."""
-    if not url_or_hash:
-        return ""
-    text = url_or_hash.strip()
-    match = re.search(r"access_token=([^&]+)", text)
-    if match:
-        return match.group(1)
-    return ""
+@st.cache_resource
+def load_authenticator():
+    """Load credentials from credentials.yaml and build the authenticator."""
+    with open("credentials.yaml", "r", encoding="utf-8") as f:
+        config = yaml.load(f, Loader=SafeLoader)
 
-
-def supabase_login_gate():
-    """Google login via Supabase Auth.
-
-    Uses paste-based flow but with a JavaScript helper that auto-detects
-    the URL hash containing the token, displays it visually for the user,
-    and provides a copy-to-clipboard helper.
-    """
-    # Already logged in this session
-    if "user_email" in st.session_state and st.session_state["user_email"]:
-        user_email = st.session_state["user_email"]
-        if db.is_allowed_user(user_email):
-            return user_email
-        else:
-            st.error(
-                f"Access denied. The email '{user_email}' is not on the "
-                f"allowed users list. Please contact the admin to be added."
-            )
-            if st.button("Log out and try a different account"):
-                st.session_state.clear()
-                st.rerun()
-            st.stop()
-
-    # JS component: detects URL hash, shows status, auto-clicks the
-    # Complete Login button if a token is found in the URL
-    components.html(
-        """
-        <div id="auth-helper" style="font-family: -apple-system, system-ui, sans-serif;">
-            <div id="auth-status" style="padding: 12px; border-radius: 6px;
-                background: #f0f2f6; color: #31333f; margin-bottom: 8px;
-                display: none;">
-                <span id="auth-msg"></span>
-            </div>
-        </div>
-        <script>
-        (function() {
-            var statusBox = document.getElementById('auth-status');
-            var msgEl = document.getElementById('auth-msg');
-
-            function showStatus(msg, color) {
-                statusBox.style.display = 'block';
-                statusBox.style.background = color;
-                msgEl.textContent = msg;
-            }
-
-            function tryGetParentURL() {
-                try {
-                    return window.parent.location.href;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function tryGetParentHash() {
-                try {
-                    return window.parent.location.hash;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            // On load, check the parent URL
-            var parentUrl = tryGetParentURL();
-            var parentHash = tryGetParentHash();
-
-            if (parentHash && parentHash.indexOf('access_token') !== -1) {
-                showStatus('Login token detected. Click "Complete Login" below.',
-                    '#d4edda');
-
-                // Try to auto-click the Complete Login button after a moment
-                setTimeout(function() {
-                    try {
-                        var doc = window.parent.document;
-                        var textareas = doc.querySelectorAll('textarea');
-                        for (var i = 0; i < textareas.length; i++) {
-                            var ta = textareas[i];
-                            if (ta.getAttribute('aria-label') &&
-                                ta.getAttribute('aria-label').indexOf('AUTO_FILL') !== -1) {
-                                // Simulate user input via native setter (so React picks it up)
-                                var nativeSetter = Object.getOwnPropertyDescriptor(
-                                    window.parent.HTMLTextAreaElement.prototype, 'value'
-                                ).set;
-                                nativeSetter.call(ta, parentUrl);
-                                ta.dispatchEvent(new Event('input', {bubbles: true}));
-                                showStatus('URL filled in automatically. Click "Complete Login" below.',
-                                    '#d4edda');
-                                break;
-                            }
-                        }
-                    } catch (e) {
-                        showStatus('Token detected. Please copy the URL from your address bar and paste below.',
-                            '#fff3cd');
-                    }
-                }, 500);
-            }
-        })();
-        </script>
-        """,
-        height=70,
+    authenticator = stauth.Authenticate(
+        config["credentials"],
+        config["cookie"]["name"],
+        config["cookie"]["key"],
+        config["cookie"]["expiry_days"],
     )
+    return authenticator, config
 
-    # Check for token from form submission
-    pasted_url = st.session_state.get("oauth_url_paste", "")
 
-    # Login UI
-    st.title("Card Scanner")
-    st.caption("Personal business card database with smart OCR")
-    st.markdown("---")
+authenticator, config = load_authenticator()
 
-    supabase_url = st.secrets["SUPABASE_URL"]
-    oauth_url = f"{supabase_url}/auth/v1/authorize?" + urlencode({
-        "provider": "google",
-        "redirect_to": APP_URL,
-    })
-
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        st.markdown("**Step 1**")
-        st.link_button("Sign in with Google", oauth_url, type="primary",
-                       use_container_width=True)
-
-    with col2:
-        st.markdown("**Step 2**")
-        if st.button("Complete Login", type="primary",
-                     use_container_width=True):
-            token = extract_token_from_url(pasted_url)
-            if not token:
-                st.error(
-                    "No login token found. Make sure you clicked 'Sign in "
-                    "with Google' first and were redirected back here."
-                )
-                st.stop()
-
-            try:
-                user_info = db.get_user_from_token(token)
-                user_email = (user_info.get("email") or "").strip().lower()
-                if not user_email:
-                    st.error("Could not read your email from Google. "
-                             "Please try again.")
-                    st.stop()
-
-                st.session_state["user_email"] = user_email
-                st.rerun()
-            except Exception as e:
-                st.error(f"Login failed: {e}")
-                st.stop()
-
-    st.markdown("---")
-
-    # Hidden-ish paste box (used by JS to auto-fill, also visible as fallback)
-    with st.expander("Manual entry (only if auto-detection fails)",
-                     expanded=False):
-        st.text_area(
-            "AUTO_FILL_login_url",
-            placeholder="If the URL was not auto-filled, paste the full "
-                        "browser URL here (it should contain '#access_token=...')",
-            height=80,
-            key="oauth_url_paste",
-            label_visibility="collapsed",
-        )
-        st.caption(
-            "If you don't see a green message above after Google login, "
-            "copy your browser's URL and paste it here, then click "
-            "'Complete Login'."
-        )
-
+# Render the login form
+try:
+    authenticator.login(location="main")
+except Exception as e:
+    st.error(f"Login error: {e}")
     st.stop()
 
+# Check authentication status
+auth_status = st.session_state.get("authentication_status")
 
-user_email = supabase_login_gate()
+if auth_status is False:
+    st.error("Username or password is incorrect.")
+    st.stop()
+elif auth_status is None:
+    st.warning("Please enter your username and password.")
+    st.info(
+        "If you don't have credentials, contact the admin "
+        "(cavishalmundra123@gmail.com)."
+    )
+    st.stop()
+
+# Logged in successfully
+username = st.session_state["username"]
+name = st.session_state["name"]
+user_email = config["credentials"]["usernames"][username]["email"]
 
 
 def render_edit_form(prefix, initial, allow_notes=True):
@@ -252,10 +110,9 @@ def render_edit_form(prefix, initial, allow_notes=True):
 
 with st.sidebar:
     st.title("Card Scanner")
-    st.caption(f"Logged in as: **{user_email}**")
-    if st.button("Log out"):
-        st.session_state.clear()
-        st.rerun()
+    st.caption(f"Logged in as: **{name}**")
+    st.caption(f"({user_email})")
+    authenticator.logout(location="sidebar", button_name="Log out")
     st.markdown("---")
     st.metric("My Contacts", db.get_count(user_email))
     st.markdown("---")

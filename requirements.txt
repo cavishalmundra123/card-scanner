@@ -70,6 +70,7 @@ pyroaring==1.1.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-multipart==0.0.27
+PyYAML>=6.0
 realtime==2.29.0
 referencing==0.37.0
 requests==2.33.1
@@ -81,6 +82,7 @@ sniffio==1.3.1
 starlette==1.0.0
 storage3==2.29.0
 streamlit==1.57.0
+streamlit-authenticator>=0.4.2
 StrEnum==0.4.15
 strictyaml==1.7.3
 supabase==2.29.0
@@ -99,4 +101,3 @@ watchdog==6.0.0
 websockets==15.0.1
 yarl==1.23.0
 zstandard==0.25.0
-Authlib>=1.3.2
