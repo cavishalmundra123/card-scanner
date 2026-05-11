@@ -76,3 +76,7 @@ Thumbs.db
 
 # Local backup files
 app.py.backup_*
+
+# Parked for future session — cookie persistence rework
+auth_session.py
+patch_*.py
