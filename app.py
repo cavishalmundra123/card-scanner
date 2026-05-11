@@ -182,16 +182,34 @@ tab1, tab2, tab3 = st.tabs(["Upload & Scan", "Search", "All Contacts"])
 
 
 with tab1:
-    st.header("Upload PDF or Image")
-    st.caption("Supported: PDF, PNG, JPG. Cards are auto-detected.")
-    uploaded = st.file_uploader("Choose a file",
-        type=["pdf", "png", "jpg", "jpeg", "webp", "bmp"], key="uploader")
+    st.header("Scan Card")
+    st.caption("Take a photo or upload a file. Cards are auto-detected.")
+
+    scan_tab1, scan_tab2 = st.tabs(["📷 Camera", "📁 Upload File"])
+
+    uploaded = None
+    tmp_path = None
+
+    with scan_tab1:
+        camera_img = st.camera_input("Point camera at business card", key="camera")
+        if camera_img is not None:
+            from datetime import datetime
+            filename = f"camera_capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            tmp_path = os.path.join(UPLOAD_TMP, filename)
+            with open(tmp_path, "wb") as f:
+                f.write(camera_img.getbuffer())
+            uploaded = camera_img
+
+    with scan_tab2:
+        upload_file = st.file_uploader("Choose a file",
+            type=["pdf", "png", "jpg", "jpeg", "webp", "bmp"], key="uploader")
+        if upload_file is not None:
+            tmp_path = os.path.join(UPLOAD_TMP, upload_file.name)
+            with open(tmp_path, "wb") as f:
+                f.write(upload_file.getbuffer())
+            uploaded = upload_file
 
     if uploaded is not None:
-        tmp_path = os.path.join(UPLOAD_TMP, uploaded.name)
-        with open(tmp_path, "wb") as f:
-            f.write(uploaded.getbuffer())
-
         if st.button("Process File", type="primary"):
             with st.spinner("Detecting cards and extracting via Gemini..."):
                 try:

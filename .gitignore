@@ -73,3 +73,6 @@ Thumbs.db
 
 # Streamlit local secrets
 .streamlit/secrets.toml
+
+# Local backup files
+app.py.backup_*
