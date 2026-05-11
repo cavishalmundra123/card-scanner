@@ -1,20 +1,13 @@
-"""Card Scanner - Streamlit UI with username+password authentication.
-
-Auth: streamlit-authenticator (local YAML credentials, bcrypt hashed).
-Per-user data isolation: stored in cloud_db using user_email from credentials.
-"""
+"""Card Scanner - Streamlit UI with Supabase-based authentication."""
 
 import os
-import yaml
-from yaml.loader import SafeLoader
 import streamlit as st
-import streamlit_authenticator as stauth
 import pandas as pd
 
 import cloud_db as db
 from card_processor import process_file, SERVICE_CATEGORIES
 
-st.set_page_config(page_title="Card Scanner", page_icon="CARD", layout="wide")
+st.set_page_config(page_title="Card Scanner", page_icon="💼", layout="wide")
 
 UPLOAD_TMP = os.path.join("data", "_uploads")
 os.makedirs(UPLOAD_TMP, exist_ok=True)
@@ -40,43 +33,77 @@ FIELDS = [
 ]
 
 
-# Load credentials and build authenticator (NO caching - cookies need fresh init)
-with open("credentials.yaml", "r", encoding="utf-8") as f:
-    config = yaml.load(f, Loader=SafeLoader)
+# ── Login Page ────────────────────────────────────────────────────────────────
 
-authenticator = stauth.Authenticate(
-    config["credentials"],
-    config["cookie"]["name"],
-    config["cookie"]["key"],
-    config["cookie"]["expiry_days"],
-)
+def show_login():
+    st.title("💼 Card Scanner")
+    st.subheader("Login")
+    username = st.text_input("Username").strip().lower()
+    password = st.text_input("Password", type="password")
 
-# Render the login form
-try:
-    authenticator.login(location="main")
-except Exception as e:
-    st.error(f"Login error: {e}")
+    if st.button("Login", type="primary"):
+        if not username or not password:
+            st.error("Please enter both username and password.")
+            return
+        user = db.get_user(username)
+        if not user:
+            st.error("Invalid username or password.")
+            return
+        if not db.verify_password(password, user["password_hash"]):
+            st.error("Invalid username or password.")
+            return
+        # Success
+        st.session_state["authenticated"] = True
+        st.session_state["username"] = user["username"]
+        st.session_state["user_email"] = user["email"]
+        st.session_state["must_change_password"] = user.get("must_change_password", False)
+        st.rerun()
+
+    st.caption("Contact admin if you need access: cavishalmundra123@gmail.com")
+
+
+# ── Change Password Page ──────────────────────────────────────────────────────
+
+def show_change_password():
+    st.title("🔑 Change Your Password")
+    st.info("You must set a new password before continuing.")
+    username = st.session_state["username"]
+
+    new_pass = st.text_input("New Password", type="password")
+    confirm_pass = st.text_input("Confirm New Password", type="password")
+
+    if st.button("Set New Password", type="primary"):
+        if len(new_pass) < 8:
+            st.error("Password must be at least 8 characters.")
+            return
+        if new_pass != confirm_pass:
+            st.error("Passwords do not match.")
+            return
+        success = db.update_password(username, new_pass)
+        if success:
+            st.session_state["must_change_password"] = False
+            st.success("Password updated! Loading your dashboard...")
+            st.rerun()
+        else:
+            st.error("Update failed. Please try again.")
+
+
+# ── Auth Gate ─────────────────────────────────────────────────────────────────
+
+if not st.session_state.get("authenticated"):
+    show_login()
     st.stop()
 
-# Check authentication status
-auth_status = st.session_state.get("authentication_status")
-
-if auth_status is False:
-    st.error("Username or password is incorrect.")
-    st.stop()
-elif auth_status is None:
-    st.warning("Please enter your username and password.")
-    st.info(
-        "If you don't have credentials, contact the admin "
-        "(cavishalmundra123@gmail.com)."
-    )
+if st.session_state.get("must_change_password"):
+    show_change_password()
     st.stop()
 
-# Logged in successfully
+# Authenticated — load main app
 username = st.session_state["username"]
-name = st.session_state["name"]
-user_email = config["credentials"]["usernames"][username]["email"]
+user_email = st.session_state["user_email"]
 
+
+# ── Helper ────────────────────────────────────────────────────────────────────
 
 def render_edit_form(prefix, initial, allow_notes=True):
     edited = {}
@@ -102,13 +129,38 @@ def render_edit_form(prefix, initial, allow_notes=True):
     return edited
 
 
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+
 with st.sidebar:
-    st.title("Card Scanner")
-    st.caption(f"Logged in as: **{name}**")
+    st.title("💼 Card Scanner")
+    st.caption(f"Logged in as: **{username}**")
     st.caption(f"({user_email})")
-    authenticator.logout(location="sidebar", button_name="Log out")
+
+    if st.button("Log out", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+
     st.markdown("---")
     st.metric("My Contacts", db.get_count(user_email))
+    st.markdown("---")
+
+    # Change Password
+    with st.expander("🔑 Change My Password"):
+        cp_current = st.text_input("Current Password", type="password", key="cp_current")
+        cp_new = st.text_input("New Password", type="password", key="cp_new")
+        cp_confirm = st.text_input("Confirm New Password", type="password", key="cp_confirm")
+        if st.button("Update Password", key="cp_btn"):
+            user = db.get_user(username)
+            if not db.verify_password(cp_current, user["password_hash"]):
+                st.error("Current password is incorrect.")
+            elif len(cp_new) < 8:
+                st.error("New password must be at least 8 characters.")
+            elif cp_new != cp_confirm:
+                st.error("New passwords do not match.")
+            else:
+                db.update_password(username, cp_new)
+                st.success("Password updated!")
+
     st.markdown("---")
     st.subheader("Excel Backup")
     try:
@@ -119,9 +171,12 @@ with st.sidebar:
             use_container_width=True)
     except Exception as e:
         st.error(f"Excel build failed: {e}")
+
     st.markdown("---")
     st.caption("Tip: For best results, scan 3-4 cards per A4 page at 300 DPI.")
 
+
+# ── Main Tabs ─────────────────────────────────────────────────────────────────
 
 tab1, tab2, tab3 = st.tabs(["Upload & Scan", "Search", "All Contacts"])
 

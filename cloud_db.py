@@ -1,4 +1,4 @@
-"""Supabase-backed database operations.
+﻿"""Supabase-backed database operations.
 
 Drop-in replacement for the old database.py. All functions take an extra
 `user_email` argument so each user only sees/modifies their own data.
@@ -324,3 +324,48 @@ if __name__ == "__main__":
     print(f"Bucket: {BUCKET_NAME}")
     sb = get_client()
     print("Supabase client OK")
+
+
+# ============================================================
+# Authentication functions
+# ============================================================
+import bcrypt
+
+
+def get_user(username: str):
+    """Fetch a user record from Supabase by username. Returns dict or None."""
+    try:
+        sb = get_client()
+        response = sb.table("users").select("*").eq("username", username).limit(1).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"get_user error: {e}")
+        return None
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """Verify a plaintext password against a bcrypt hash."""
+    try:
+        if isinstance(hashed, str):
+            hashed = hashed.encode("utf-8")
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed)
+    except Exception as e:
+        print(f"verify_password error: {e}")
+        return False
+
+
+def update_password(username: str, new_password: str) -> bool:
+    """Hash a new password and update it in Supabase. Also clears must_change_password."""
+    try:
+        sb = get_client()
+        new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        response = sb.table("users").update({
+            "password_hash": new_hash,
+            "must_change_password": False
+        }).eq("username", username).execute()
+        return bool(response.data)
+    except Exception as e:
+        print(f"update_password error: {e}")
+        return False

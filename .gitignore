@@ -47,3 +47,29 @@ make_secrets.py
 # OAuth client secret JSON files (in case you saved one)
 client_secret_*.json
 *credentials*.json
+# Environment variables (CRITICAL - contains API keys)
+.env
+.env.local
+.env.*.local
+
+# Python virtual environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Old auth credentials (replaced by Supabase)
+credentials.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit local secrets
+.streamlit/secrets.toml
