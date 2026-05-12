@@ -229,6 +229,7 @@ with tab1:
             if len(unsaved) > 1:
                 if st.button(f"Save All {len(unsaved)} Cards", type="primary", key="save_all"):
                     saved_count = 0
+                    skipped_dups = 0
                     for idx, item in enumerate(results):
                         if item.get("_saved"):
                             continue
@@ -237,11 +238,25 @@ with tab1:
                         for key, _ in FIELDS:
                             session_key = f"{prefix}_{key}"
                             record[key] = st.session_state.get(session_key) or item["data"].get(key)
+                        # Skip cards with duplicates — user must resolve those individually
+                        dup_check = db.find_duplicate(
+                            user_email,
+                            phone_primary=record.get("phone_primary", "") or "",
+                            phone_secondary=record.get("phone_secondary", "") or "",
+                            whatsapp=record.get("whatsapp", "") or "",
+                            email=record.get("email", "") or "",
+                        )
+                        if dup_check:
+                            skipped_dups += 1
+                            continue
                         record["card_image_path"] = item["image_path"]
                         db.insert_contact(user_email, record)
                         item["_saved"] = True
                         saved_count += 1
-                    st.success(f"Saved {saved_count} contacts.")
+                    if skipped_dups:
+                        st.success(f"Saved {saved_count} contacts. Skipped {skipped_dups} possible duplicate(s) - please review below.")
+                    else:
+                        st.success(f"Saved {saved_count} contacts.")
                     st.rerun()
 
             for idx, item in enumerate(results):
@@ -261,14 +276,65 @@ with tab1:
                     with form_col:
                         edited = render_edit_form(prefix=f"scan_{idx}",
                             initial=item["data"], allow_notes=True)
+
+                        # ---- Duplicate detection ----
+                        dup_inputs = (
+                            (edited.get("phone_primary") or "").strip(),
+                            (edited.get("phone_secondary") or "").strip(),
+                            (edited.get("whatsapp") or "").strip(),
+                            (edited.get("email") or "").strip().lower(),
+                        )
+                        dup_cache_key = f"dup_{idx}_{hash(dup_inputs)}"
+                        if dup_cache_key not in st.session_state:
+                            st.session_state[dup_cache_key] = db.find_duplicate(
+                                user_email,
+                                phone_primary=dup_inputs[0],
+                                phone_secondary=dup_inputs[1],
+                                whatsapp=dup_inputs[2],
+                                email=dup_inputs[3],
+                            )
+                        duplicate = st.session_state[dup_cache_key]
+
+                        # ---- Warning + choice if duplicate ----
+                        dup_choice = "new"  # default
+                        if duplicate:
+                            dup_name = duplicate.get("full_name") or "(no name)"
+                            dup_company = duplicate.get("company_name") or "(no company)"
+                            dup_phone = duplicate.get("phone_primary") or duplicate.get("phone_secondary") or duplicate.get("whatsapp") or ""
+                            dup_email = duplicate.get("email") or ""
+                            st.warning(
+                                f"⚠️ **Possible duplicate found**\n\n"
+                                f"**{dup_name}** @ {dup_company}\n\n"
+                                f"Phone: `{dup_phone}` | Email: `{dup_email}`"
+                            )
+                            dup_choice = st.radio(
+                                "What would you like to do?",
+                                options=["update", "new"],
+                                format_func=lambda x: "Update existing contact" if x == "update" else "Save as new contact (intentional duplicate)",
+                                key=f"dup_choice_{idx}",
+                                horizontal=False,
+                            )
+
+                        # ---- Save / Discard buttons ----
+                        save_label = "Update Existing" if (duplicate and dup_choice == "update") else "Save to Database"
                         c1, c2 = st.columns(2)
                         with c1:
-                            if st.button("Save to Database", key=f"save_{idx}", type="primary"):
-                                edited["card_image_path"] = item["image_path"]
-                                new_id = db.insert_contact(user_email, edited)
-                                item["_saved"] = True
-                                st.success(f"Saved as contact #{new_id}")
-                                st.rerun()
+                            if st.button(save_label, key=f"save_{idx}", type="primary"):
+                                if duplicate and dup_choice == "update":
+                                    edited["card_image_path"] = item["image_path"]
+                                    ok = db.update_contact_partial(user_email, duplicate["id"], edited)
+                                    if ok:
+                                        item["_saved"] = True
+                                        st.success(f"Updated existing contact #{duplicate['id']}")
+                                        st.rerun()
+                                    else:
+                                        st.error("Update failed. Check console.")
+                                else:
+                                    edited["card_image_path"] = item["image_path"]
+                                    new_id = db.insert_contact(user_email, edited)
+                                    item["_saved"] = True
+                                    st.success(f"Saved as contact #{new_id}")
+                                    st.rerun()
                         with c2:
                             if st.button("Discard", key=f"discard_{idx}"):
                                 item["_saved"] = True

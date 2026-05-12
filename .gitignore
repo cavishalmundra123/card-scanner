@@ -80,3 +80,5 @@ app.py.backup_*
 # Parked for future session — cookie persistence rework
 auth_session.py
 patch_*.py
+
+cloud_db.py.backup_*

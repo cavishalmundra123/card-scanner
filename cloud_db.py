@@ -1,4 +1,4 @@
-﻿"""Supabase-backed database operations.
+"""Supabase-backed database operations.
 
 Drop-in replacement for the old database.py. All functions take an extra
 `user_email` argument so each user only sees/modifies their own data.
@@ -368,4 +368,125 @@ def update_password(username: str, new_password: str) -> bool:
         return bool(response.data)
     except Exception as e:
         print(f"update_password error: {e}")
+        return False
+
+
+# ============================================================
+# Duplicate detection helpers
+# ============================================================
+import re
+
+
+def normalize_phone(raw) -> str:
+    """
+    Normalize a phone number for duplicate comparison.
+    Returns the last 8 digits (Oman mobile format).
+    Returns empty string if input has fewer than 8 digits.
+    Examples:
+        "+968 9123 4567" -> "91234567"
+        "0096891234567"  -> "91234567"
+        "91234567"       -> "91234567"
+        "123"            -> ""  (too short)
+    """
+    if not raw:
+        return ""
+    digits = re.sub(r"\D", "", str(raw))
+    if len(digits) < 8:
+        return ""
+    return digits[-8:]
+
+
+def find_duplicate(
+    user_email: str,
+    phone_primary: str = "",
+    phone_secondary: str = "",
+    whatsapp: str = "",
+    email: str = "",
+) -> dict | None:
+    """
+    Find an existing contact matching by ANY phone field OR email.
+
+    Matching:
+    - All input phones (primary/secondary/whatsapp) are normalized to last-8-digits.
+    - Compared against ALL phone fields of every existing contact.
+    - Email matched exact (case-insensitive).
+
+    Returns the first matching contact dict, or None.
+    """
+    # Build set of normalized input phones (drops empties)
+    input_phones = set()
+    for raw in (phone_primary, phone_secondary, whatsapp):
+        n = normalize_phone(raw)
+        if n:
+            input_phones.add(n)
+
+    norm_email = (email or "").strip().lower()
+
+    if not input_phones and not norm_email:
+        return None
+
+    try:
+        sb = get_client()
+        result = sb.table("contacts").select("*").eq("user_email", user_email).execute()
+        contacts = result.data or []
+
+        for c in contacts:
+            # Email exact match
+            if norm_email:
+                existing_email = (c.get("email") or "").strip().lower()
+                if existing_email and existing_email == norm_email:
+                    return c
+
+            # Phone match: ANY of contact's 3 phone fields matches ANY input phone
+            if input_phones:
+                existing_phones = set()
+                for field in ("phone_primary", "phone_secondary", "whatsapp"):
+                    n = normalize_phone(c.get(field, ""))
+                    if n:
+                        existing_phones.add(n)
+                if input_phones & existing_phones:
+                    return c
+
+        return None
+    except Exception as e:
+        print(f"find_duplicate error: {e}")
+        return None
+
+
+
+def update_contact_partial(user_email: str, contact_id: int, data: dict) -> bool:
+    """
+    Update an existing contact, but only overwrite fields where the new value is non-empty.
+    Empty strings, None, and whitespace-only strings are treated as "no update for this field".
+    Only updates if the contact belongs to user_email.
+    Returns True on success.
+    """
+    try:
+        sb = get_client()
+        # Build update dict with only non-empty values
+        update_fields = [f for f in CONTACT_FIELDS if f != "card_image_path"]
+        record = {}
+        for key in update_fields:
+            new_val = data.get(key)
+            if new_val is None:
+                continue
+            if isinstance(new_val, str) and new_val.strip() == "":
+                continue
+            record[key] = new_val
+
+        # If user uploaded a new card image, update that too
+        if data.get("card_image_path"):
+            record["card_image_path"] = data["card_image_path"]
+
+        if not record:
+            print("update_contact_partial: nothing to update")
+            return True  # no-op success
+
+        sb.table("contacts").update(record) \
+            .eq("id", contact_id) \
+            .eq("user_email", user_email) \
+            .execute()
+        return True
+    except Exception as e:
+        print(f"update_contact_partial error: {e}")
         return False
