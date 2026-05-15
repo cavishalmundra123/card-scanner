@@ -41,11 +41,17 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = [2, 4, 8]
 
 SERVICE_CATEGORIES = [
-    "Construction", "IT Services", "Manufacturing", "Trading",
-    "Healthcare", "Education", "Finance", "Real Estate",
-    "Logistics", "Hospitality", "Retail", "Consulting",
-    "Legal", "Marketing", "Automotive", "Telecommunications",
-    "Energy", "Agriculture", "Media", "Other"
+    "Construction", "Construction Materials", "Engineering", "Architecture",
+    "Interior Design", "Manufacturing", "Industrial Equipment", "Trading",
+    "Import/Export", "Wholesale & Distribution", "Retail",
+    "Oil & Gas", "Energy", "Mining", "Chemicals", "Plastics & Polymers",
+    "Healthcare", "Pharmaceuticals", "Education", "Finance", "Insurance",
+    "Real Estate", "Logistics", "Hospitality", "Travel & Tourism",
+    "Food & Beverage", "Agriculture", "Textiles", "Automotive",
+    "IT Services", "Software", "Electronics", "Telecommunications",
+    "Media", "Marketing", "Consulting", "Legal", "Accounting",
+    "Printing & Packaging", "Security Services", "Facilities Management",
+    "Government", "Non-Profit", "Other"
 ]
 
 EXPECTED_KEYS = [
@@ -190,11 +196,35 @@ CRITICAL RULES:
 - If you see 4 cards, return an array with 4 objects. If you see 1 card, return an array with 1 object.
 - Do NOT merge information from different cards. Each person/company gets its own object.
 - Use null when a field is not present on that specific card.
-- "service_category" MUST be one of: {SERVICE_CATEGORIES}. Infer from company name, designation, or tagline. Use "Other" only if truly unclear.
 - Mobile numbers go in phone_primary; landlines/office in phone_secondary. Format with country code if visible (e.g., "+91 98765 43210").
 - Normalize country to its full English name ("United Arab Emirates" not "UAE", "India" not "IN", "Oman" for Sultanate of Oman).
 - "area" = locality/neighborhood (e.g., "Bandra West", "Karama", "Ruwi") -- separate from city.
 - Trim whitespace. Do not invent data not visible on the card.
+
+SERVICE CATEGORY -- IMPORTANT:
+"service_category" MUST be exactly one value from this list:
+{SERVICE_CATEGORIES}
+
+How to choose the category (follow this reasoning for EACH card):
+1. Read the company name, designation, tagline, and any services/products text on the card.
+2. Work out what industry or business the company operates in.
+3. Pick the SINGLE closest matching category from the list above. Examples of reasoning:
+   - "Al Noor Trading LLC" dealing in goods -> "Trading"
+   - A name with "Engineering" / "Engineers" / "Consultants (Engg)" -> "Engineering"
+   - "...Contracting" / "...Builders" / "...Construction Co" -> "Construction"
+   - "...Pipes" / "...Plastic" / "...Polymer" / "PVC/HDPE" -> "Plastics & Polymers"
+   - "...Petroleum" / "...Oilfield" / "...Drilling" / "...Gas" -> "Oil & Gas"
+   - "...IT Solutions" / "...Software" / "...Technologies" / "...Systems" -> "IT Services" or "Software"
+   - "...Logistics" / "...Shipping" / "...Freight" / "...Cargo" -> "Logistics"
+   - A doctor, clinic, hospital, or medical supplier -> "Healthcare"
+   - "...Pharma" / "...Pharmaceuticals" / "...Drug" -> "Pharmaceuticals"
+   - "...Properties" / "...Real Estate" / "...Realty" -> "Real Estate"
+   - Hotel, restaurant, catering -> "Hospitality" or "Food & Beverage"
+   - Bank, financial services, investment -> "Finance"
+   - Insurance company or broker -> "Insurance"
+   - Law firm, advocate, legal consultant -> "Legal"
+   - Audit, chartered accountant, bookkeeping -> "Accounting"
+4. Use "Other" ONLY when the card has NO company name and NO industry signal at all (for example, just a personal name and phone number). Do NOT default to "Other" simply because no category is a perfect match -- always pick the closest one.
 
 Return ONLY the JSON array. Start your response with [ and end with ].
 """
@@ -223,12 +253,36 @@ Return ONLY valid JSON (no markdown, no code fences) with these exact keys:
 
 RULES:
 - Use null when a field is not present on the card.
-- "service_category" MUST be one of: {SERVICE_CATEGORIES}. Use "Other" if truly unclear.
 - Mobile numbers go in phone_primary; landlines in phone_secondary.
 - Format phone numbers with country code if visible.
 - Normalize country to its full English name.
 - "area" = locality/neighborhood, separate from city.
 - Trim whitespace. Do not invent data.
+
+SERVICE CATEGORY -- IMPORTANT:
+"service_category" MUST be exactly one value from this list:
+{SERVICE_CATEGORIES}
+
+How to choose the category:
+1. Read the company name, designation, tagline, and any services/products text.
+2. Work out what industry or business the company operates in.
+3. Pick the SINGLE closest matching category from the list above. Examples:
+   - "...Trading LLC" dealing in goods -> "Trading"
+   - "Engineering" / "Engineers" in the name -> "Engineering"
+   - "...Contracting" / "...Construction" -> "Construction"
+   - "...Pipes" / "...Plastic" / "...Polymer" / "PVC/HDPE" -> "Plastics & Polymers"
+   - "...Petroleum" / "...Oilfield" / "...Gas" -> "Oil & Gas"
+   - "...IT Solutions" / "...Software" / "...Technologies" -> "IT Services" or "Software"
+   - "...Logistics" / "...Shipping" / "...Freight" -> "Logistics"
+   - Doctor, clinic, hospital, medical supplier -> "Healthcare"
+   - "...Pharma" / "...Pharmaceuticals" -> "Pharmaceuticals"
+   - "...Properties" / "...Real Estate" -> "Real Estate"
+   - Hotel, restaurant, catering -> "Hospitality" or "Food & Beverage"
+   - Bank, financial services -> "Finance"
+   - Insurance company or broker -> "Insurance"
+   - Law firm, advocate -> "Legal"
+   - Audit, chartered accountant -> "Accounting"
+4. Use "Other" ONLY when the card has NO company name and NO industry signal at all. Do NOT default to "Other" just because no category is a perfect match -- always pick the closest one.
 """
 
 

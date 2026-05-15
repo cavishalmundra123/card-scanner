@@ -1,0 +1,28 @@
+[theme]
+primaryColor = "#1f4e79"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f9fafb"
+textColor = "#1f2937"
+font = "sans serif"
+
+[client]
+showErrorDetails = true
+toolbarMode = "viewer"
+showSidebarNavigation = false
+
+[logger]
+level = "info"
+
+[server]
+port = 8501
+headless = true
+runOnSave = true
+maxUploadSize = 200
+
+[ui]
+hideTopBar = false
+hideFooter = false
+
+[deprecation]
+showPyplotGlobalUse = false
+showfileUploaderEncoding = false

@@ -1,0 +1,309 @@
+/* ============================================
+   Card Scanner — UI Theme
+   Corporate Blue (#1f4e79)
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ── Global typography ─────────────────────── */
+html, body, [class*="css"], .stMarkdown, .stText, button, input, textarea, select {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+/* Tighter root container — less wasted whitespace */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+    max-width: 1200px;
+}
+
+/* ── Headings ──────────────────────────────── */
+h1 {
+    font-size: 1.875rem !important;
+    font-weight: 700 !important;
+    color: #1f4e79 !important;
+    letter-spacing: -0.02em !important;
+    margin-bottom: 0.25rem !important;
+    line-height: 1.2 !important;
+}
+
+h2 {
+    font-size: 1.25rem !important;
+    font-weight: 600 !important;
+    color: #1a202c !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.5rem !important;
+    letter-spacing: -0.01em !important;
+}
+
+h3 {
+    font-size: 1.05rem !important;
+    font-weight: 600 !important;
+    color: #2d3748 !important;
+}
+
+/* ── App header lockup ─────────────────────── */
+.app-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 4px;
+}
+.app-header svg { flex-shrink: 0; }
+.app-header h1 { margin: 0 !important; }
+
+.app-tagline {
+    color: #64748b;
+    font-size: 0.95rem;
+    font-weight: 400;
+    margin-bottom: 2rem;
+    margin-top: 0;
+}
+
+/* Section header (for "Scan Card" etc) */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+.section-header h2 { margin: 0 !important; }
+.section-caption {
+    color: #64748b;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+    margin-top: 0;
+}
+
+/* ── Sidebar ───────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+}
+[data-testid="stSidebar"] .block-container {
+    padding-top: 1.5rem;
+}
+
+/* User card in sidebar */
+.user-card {
+    padding: 12px 14px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 14px;
+}
+.user-card .name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #1a202c;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.user-card .email {
+    color: #64748b;
+    font-size: 0.78rem;
+    margin-top: 2px;
+    word-break: break-all;
+}
+
+/* Hero stat card */
+.stat-card {
+    padding: 18px 16px;
+    background: linear-gradient(135deg, #1f4e79 0%, #2a6396 100%);
+    border-radius: 10px;
+    color: white;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 8px rgba(31, 78, 121, 0.15);
+}
+.stat-card .label {
+    font-size: 0.72rem;
+    opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+}
+.stat-card .value {
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 4px;
+}
+
+/* Sidebar section label */
+.sidebar-section-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Tip card in sidebar */
+.tip-card {
+    padding: 12px;
+    background: #fefce8;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: #713f12;
+    line-height: 1.4;
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+.tip-card svg { flex-shrink: 0; margin-top: 2px; }
+
+/* ── Buttons ───────────────────────────────── */
+.stButton > button {
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+    transition: all 0.15s !important;
+}
+.stButton > button[kind="primary"] {
+    background: #1f4e79 !important;
+    border: 1px solid #1f4e79 !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background: #163a5c !important;
+    border-color: #163a5c !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(31, 78, 121, 0.2);
+}
+.stButton > button[kind="secondary"] {
+    border: 1px solid #cbd5e0 !important;
+    background: white !important;
+    color: #2d3748 !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    border-color: #1f4e79 !important;
+    color: #1f4e79 !important;
+}
+
+/* Download button */
+.stDownloadButton > button {
+    background: white !important;
+    border: 1px solid #cbd5e0 !important;
+    color: #2d3748 !important;
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+}
+.stDownloadButton > button:hover {
+    border-color: #1f4e79 !important;
+    color: #1f4e79 !important;
+}
+
+/* ── File uploader — proper drop zone look ── */
+[data-testid="stFileUploader"] section {
+    border: 2px dashed #cbd5e0 !important;
+    border-radius: 10px !important;
+    background: #f8fafc !important;
+    padding: 2rem 1.5rem !important;
+    transition: all 0.2s ease !important;
+}
+[data-testid="stFileUploader"] section:hover {
+    border-color: #1f4e79 !important;
+    background: #f0f4f9 !important;
+}
+[data-testid="stFileUploader"] section small {
+    color: #64748b !important;
+}
+[data-testid="stFileUploader"] button {
+    border-radius: 6px !important;
+    border: 1px solid #cbd5e0 !important;
+    background: white !important;
+    font-weight: 500 !important;
+}
+[data-testid="stFileUploader"] button:hover {
+    border-color: #1f4e79 !important;
+    color: #1f4e79 !important;
+}
+
+/* ── Sub-tabs (Upload File / Camera) ──────── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+    border-bottom: 1px solid #e2e8f0;
+}
+.stTabs [data-baseweb="tab"] {
+    font-size: 0.92rem !important;
+    font-weight: 500 !important;
+    padding: 0.6rem 1rem !important;
+    color: #64748b !important;
+    border-bottom: 2px solid transparent !important;
+}
+.stTabs [aria-selected="true"] {
+    color: #1f4e79 !important;
+    border-bottom-color: #1f4e79 !important;
+    font-weight: 600 !important;
+}
+
+/* ── Inputs ────────────────────────────────── */
+.stTextInput input, .stTextArea textarea, .stSelectbox > div > div {
+    border-radius: 6px !important;
+    border: 1px solid #cbd5e0 !important;
+}
+.stTextInput input:focus, .stTextArea textarea:focus {
+    border-color: #1f4e79 !important;
+    box-shadow: 0 0 0 3px rgba(31, 78, 121, 0.1) !important;
+}
+
+/* Labels above inputs */
+.stTextInput label, .stTextArea label, .stSelectbox label, .stFileUploader label {
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    color: #2d3748 !important;
+}
+
+/* ── Metrics & alerts polish ───────────────── */
+[data-testid="stMetricValue"] {
+    font-size: 1.75rem !important;
+    font-weight: 700 !important;
+    color: #1f4e79 !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.78rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b !important;
+}
+
+.stAlert {
+    border-radius: 8px !important;
+    border-left-width: 4px !important;
+}
+
+/* ── Hide default Streamlit footer/menu for cleaner look ── */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+
+/* Hide the "Deploy" button when running locally (cosmetic) */
+.stDeployButton { display: none; }
+
+/* ── Dataframes ────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+/* ── Expander ──────────────────────────────── */
+.streamlit-expanderHeader {
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+}
+
+/* ── option-menu (top nav) overrides ───────── */
+.nav-link {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 500 !important;
+}
+.nav-link-selected {
+    background-color: #1f4e79 !important;
+    font-weight: 600 !important;
+}

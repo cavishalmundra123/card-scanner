@@ -3,11 +3,26 @@
 import os
 import streamlit as st
 import pandas as pd
+from streamlit_option_menu import option_menu
 
 import cloud_db as db
 from card_processor import process_file, SERVICE_CATEGORIES
+from ui_components import (
+    load_css, render_app_header, render_section_header,
+    render_user_card, render_stat_card, render_sidebar_label,
+    render_tip, ICON_UPLOAD, ICON_SEARCH, ICON_CONTACTS,
+    ICON_KEY, ICON_DOWNLOAD,
+)
 
-st.set_page_config(page_title="Card Scanner", page_icon="💼", layout="wide")
+st.set_page_config(
+    page_title="Card Scanner",
+    page_icon="💼",  # browser tab favicon only — not visible inside app
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Inject custom CSS (call once, near the top)
+load_css("static/style.css")
 
 UPLOAD_TMP = os.path.join("data", "_uploads")
 os.makedirs(UPLOAD_TMP, exist_ok=True)
@@ -36,8 +51,8 @@ FIELDS = [
 # ── Login Page ────────────────────────────────────────────────────────────────
 
 def show_login():
-    st.title("💼 Card Scanner")
-    st.subheader("Login")
+    render_app_header()
+    st.markdown("### Sign in")
     username = st.text_input("Username").strip().lower()
     password = st.text_input("Password", type="password")
 
@@ -65,7 +80,8 @@ def show_login():
 # ── Change Password Page ──────────────────────────────────────────────────────
 
 def show_change_password():
-    st.title("🔑 Change Your Password")
+    render_app_header()
+    st.markdown("### Change your password")
     st.info("You must set a new password before continuing.")
     username = st.session_state["username"]
 
@@ -105,6 +121,102 @@ user_email = st.session_state["user_email"]
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
+@st.dialog("Card Details")
+def _show_card_dialog(contact):
+    """Popup dialog: card image on top, contact details below."""
+    name = contact.get("full_name") or "(no name)"
+    company = contact.get("company_name") or "-"
+
+    img_path = contact.get("card_image_path")
+    if img_path:
+        signed_url = db.get_card_image_url(img_path)
+        if signed_url:
+            st.image(signed_url, use_container_width=True)
+        else:
+            st.caption("Image link expired.")
+    else:
+        st.caption("No card image available.")
+
+    st.markdown(f"### {name}")
+    if contact.get("designation"):
+        st.markdown(f"*{contact['designation']}*")
+    st.markdown(f"**{company}**")
+    st.markdown("---")
+
+    # Show all non-empty fields as a clean list
+    detail_fields = [
+        ("Service Category", "service_category"),
+        ("Email", "email"),
+        ("Phone (Primary)", "phone_primary"),
+        ("Phone (Secondary)", "phone_secondary"),
+        ("WhatsApp", "whatsapp"),
+        ("Website", "website"),
+        ("Address", "address_line"),
+        ("Area", "area"),
+        ("City", "city"),
+        ("State", "state"),
+        ("Country", "country"),
+        ("Postal Code", "postal_code"),
+        ("LinkedIn", "social_linkedin"),
+        ("Notes", "notes"),
+    ]
+    for label, key in detail_fields:
+        val = contact.get(key)
+        if val:
+            st.markdown(f"**{label}:** {val}")
+
+
+def render_contact_rows(contacts, key_prefix):
+    """Render contacts as custom rows, each with a 'View Card' button.
+    Clicking a button opens a popup dialog with the card image and details.
+    """
+    # Column width ratios: ID, Name, Company, Category, Phone, Email, City, Country, Card
+    col_widths = [0.7, 2, 2.3, 1.6, 1.8, 2.3, 1.2, 1.2, 1.2]
+
+    # Header row
+    h = st.columns(col_widths)
+    h[0].markdown("**ID**")
+    h[1].markdown("**Name**")
+    h[2].markdown("**Company**")
+    h[3].markdown("**Category**")
+    h[4].markdown("**Phone**")
+    h[5].markdown("**Email**")
+    h[6].markdown("**City**")
+    h[7].markdown("**Country**")
+    h[8].markdown("**Card**")
+    st.markdown(
+        "<hr style='margin:4px 0; border:none; border-top:1px solid #e2e8f0;'>",
+        unsafe_allow_html=True,
+    )
+
+    for contact in contacts:
+        cid = contact["id"]
+        name = contact.get("full_name") or "(no name)"
+        company = contact.get("company_name") or "-"
+        category = contact.get("service_category") or "-"
+        phone = contact.get("phone_primary") or "-"
+        email = contact.get("email") or "-"
+        city = contact.get("city") or "-"
+        country = contact.get("country") or "-"
+
+        row = st.columns(col_widths)
+        row[0].write(f"#{cid}")
+        row[1].write(name)
+        row[2].write(company)
+        row[3].write(category)
+        row[4].write(phone)
+        row[5].write(email)
+        row[6].write(city)
+        row[7].write(country)
+        if row[8].button("View Card", key=f"{key_prefix}_view_{cid}"):
+            _show_card_dialog(contact)
+
+        st.markdown(
+            "<hr style='margin:4px 0; border:none; border-top:1px solid #f1f5f9;'>",
+            unsafe_allow_html=True,
+        )
+
+
 def render_edit_form(prefix, initial, allow_notes=True):
     edited = {}
     col1, col2 = st.columns(2)
@@ -132,24 +244,39 @@ def render_edit_form(prefix, initial, allow_notes=True):
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("💼 Card Scanner")
-    st.caption(f"Logged in as: **{username}**")
-    st.caption(f"({user_email})")
+    # User identity card
+    render_user_card(username, user_email)
 
-    if st.button("Log out", use_container_width=True):
+    # Hero stat card
+    contact_count = db.get_count(user_email)
+    render_stat_card("My Contacts", contact_count)
+
+    # Log out
+    if st.button("Log out", use_container_width=True, type="secondary"):
         st.session_state.clear()
         st.rerun()
 
-    st.markdown("---")
-    st.metric("My Contacts", db.get_count(user_email))
-    st.markdown("---")
+    # Tools section
+    render_sidebar_label("Tools", ICON_DOWNLOAD)
+    try:
+        excel_bytes = db.build_excel_bytes(user_email)
+        st.download_button(
+            "Download Excel Backup",
+            excel_bytes,
+            file_name=f"contacts_{user_email.replace('@', '_at_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    except Exception as e:
+        st.error(f"Excel build failed: {e}")
 
-    # Change Password
-    with st.expander("🔑 Change My Password"):
-        cp_current = st.text_input("Current Password", type="password", key="cp_current")
-        cp_new = st.text_input("New Password", type="password", key="cp_new")
-        cp_confirm = st.text_input("Confirm New Password", type="password", key="cp_confirm")
-        if st.button("Update Password", key="cp_btn"):
+    # Account section
+    render_sidebar_label("Account", ICON_KEY)
+    with st.expander("Change password"):
+        cp_current = st.text_input("Current password", type="password", key="cp_current")
+        cp_new = st.text_input("New password", type="password", key="cp_new")
+        cp_confirm = st.text_input("Confirm new password", type="password", key="cp_confirm")
+        if st.button("Update password", key="cp_btn", type="primary", use_container_width=True):
             user = db.get_user(username)
             if not db.verify_password(cp_current, user["password_hash"]):
                 st.error("Current password is incorrect.")
@@ -161,31 +288,59 @@ with st.sidebar:
                 db.update_password(username, cp_new)
                 st.success("Password updated!")
 
-    st.markdown("---")
-    st.subheader("Excel Backup")
-    try:
-        excel_bytes = db.build_excel_bytes(user_email)
-        st.download_button("Download My Contacts (Excel)", excel_bytes,
-            file_name=f"contacts_{user_email.replace('@', '_at_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True)
-    except Exception as e:
-        st.error(f"Excel build failed: {e}")
-
-    st.markdown("---")
-    st.caption("Tip: For best results, scan 3-4 cards per A4 page at 300 DPI.")
+    # Tip card
+    render_tip("For best scans, fit 3-4 cards per A4 page at 300 DPI.")
 
 
-# ── Main Tabs ─────────────────────────────────────────────────────────────────
+# ── Main Header + Top Nav ─────────────────────────────────────────────────────
 
-tab1, tab2, tab3 = st.tabs(["Upload & Scan", "Search", "All Contacts"])
+render_app_header()
+
+selected_tab = option_menu(
+    menu_title=None,
+    options=["Upload & Scan", "Search", "All Contacts"],
+    icons=["cloud-upload", "search", "people"],
+    orientation="horizontal",
+    default_index=0,
+    styles={
+        "container": {
+            "padding": "0!important",
+            "background-color": "transparent",
+            "margin-bottom": "1.5rem",
+            "border-bottom": "1px solid #e2e8f0",
+        },
+        "icon": {"color": "#64748b", "font-size": "16px"},
+        "nav-link": {
+            "font-size": "0.95rem",
+            "text-align": "center",
+            "margin": "0 4px",
+            "padding": "12px 20px",
+            "color": "#64748b",
+            "background-color": "transparent",
+            "border-radius": "6px 6px 0 0",
+            "border-bottom": "2px solid transparent",
+        },
+        "nav-link-selected": {
+            "background-color": "transparent",
+            "color": "#1f4e79",
+            "font-weight": "600",
+            "border-bottom": "2px solid #1f4e79",
+            "border-radius": "0",
+        },
+    },
+)
 
 
-with tab1:
-    st.header("Scan Card")
-    st.caption("Take a photo or upload a file. Cards are auto-detected.")
+# ── Tab 1: Upload & Scan ──────────────────────────────────────────────────────
 
-    scan_tab1, scan_tab2 = st.tabs(["📁 Upload File", "📷 Camera"])
+if selected_tab == "Upload & Scan":
+    render_section_header(
+        "Scan Card",
+        "Take a photo or upload a file. Cards are auto-detected.",
+        ICON_UPLOAD,
+    )
+
+    scan_tab1, scan_tab2 = st.tabs(["Upload File", "Camera"])
 
     uploaded = None
     tmp_path = None
@@ -347,8 +502,14 @@ with tab1:
                 st.rerun()
 
 
-with tab2:
-    st.header("Search My Contacts")
+# ── Tab 2: Search ─────────────────────────────────────────────────────────────
+
+elif selected_tab == "Search":
+    render_section_header(
+        "Search My Contacts",
+        "Find contacts by name, company, phone, or any field.",
+        ICON_SEARCH,
+    )
     existing_categories = db.get_distinct_values(user_email, "service_category")
     category_options = ["All"] + sorted(set(SERVICE_CATEGORIES) | set(existing_categories))
     country_options = ["All"] + db.get_distinct_values(user_email, "country")
@@ -370,17 +531,20 @@ with tab2:
 
     st.markdown(f"**{len(results)} result(s)**")
     if results:
+        render_contact_rows(results, key_prefix="search")
         df = pd.DataFrame(results)
-        display_cols = ["id", "full_name", "designation", "company_name",
-            "service_category", "phone_primary", "email", "city", "country"]
-        display_cols = [c for c in display_cols if c in df.columns]
-        st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button("Download as CSV", csv, "contacts_search.csv", "text/csv")
 
 
-with tab3:
-    st.header("All My Contacts")
+# ── Tab 3: All Contacts ───────────────────────────────────────────────────────
+
+elif selected_tab == "All Contacts":
+    render_section_header(
+        "All My Contacts",
+        f"You have {contact_count} contact(s) saved.",
+        ICON_CONTACTS,
+    )
     contacts = db.get_all_contacts(user_email)
     if not contacts:
         st.info("No contacts yet. Upload a file in the 'Upload & Scan' tab.")
@@ -399,7 +563,8 @@ with tab3:
         display_cols = ["id", "full_name", "designation", "company_name",
             "service_category", "phone_primary", "email", "city", "country", "created_at"]
         display_cols = [c for c in display_cols if c in df_all.columns]
-        st.dataframe(df_all[display_cols], use_container_width=True, hide_index=True)
+
+        render_contact_rows(contacts, key_prefix="all")
 
         csv_all = df_all.to_csv(index=False).encode("utf-8")
         st.download_button("Export All as CSV", csv_all, "contacts_all.csv", "text/csv")
