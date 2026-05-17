@@ -180,8 +180,8 @@ def render_contact_rows(contacts, key_prefix):
         for i, c in enumerate(sorted(contacts, key=lambda x: x["id"]))
     }
 
-    # Column width ratios: S.No., Name, Company, Category, Phone, Email, City, Country, Card
-    col_widths = [0.7, 2, 2.3, 1.6, 1.8, 2.3, 1.2, 1.2, 1.2]
+    # Column width ratios: S.No, Name, Company, Category, Phone, Email, City, Country, Card
+    col_widths = [1.0, 2, 2.3, 1.6, 1.8, 2.3, 1.2, 1.2, 1.2]
 
     # Header row
     h = st.columns(col_widths)
