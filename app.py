@@ -181,7 +181,7 @@ def render_contact_rows(contacts, key_prefix):
     }
 
     # Column width ratios: S.No, Name, Company, Category, Phone, Email, City, Country, Card
-    col_widths = [1.0, 2, 2.3, 1.6, 1.8, 2.3, 1.2, 1.2, 1.2]
+    col_widths = [0.8, 2, 2.3, 1.6, 1.8, 2.3, 1.2, 1.2, 1.5]
 
     # Header row
     h = st.columns(col_widths)

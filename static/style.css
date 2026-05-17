@@ -10,6 +10,17 @@ html, body, [class*="css"], .stMarkdown, .stText, button, input, textarea, selec
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 
+/* Shrink base font for better column fit (was 14px, now 13px) */
+html {
+    font-size: 13px !important;
+}
+
+/* Fix Streamlit's number-coloring: plain integers in st.write get
+   green/red/blue treatment by default. Force them to standard text color. */
+.stMarkdown p, .stMarkdown span, .element-container p {
+    color: #1a202c !important;
+}
+
 /* Tighter root container — less wasted whitespace */
 .main .block-container {
     padding-top: 2rem;
