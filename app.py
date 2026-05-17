@@ -169,13 +169,23 @@ def _show_card_dialog(contact):
 def render_contact_rows(contacts, key_prefix):
     """Render contacts as custom rows, each with a 'View Card' button.
     Clicking a button opens a popup dialog with the card image and details.
+
+    Note: S.No. shown to the user is computed per-user, oldest = 1.
+    The real database 'id' is still used internally for unique button keys.
     """
-    # Column width ratios: ID, Name, Company, Category, Phone, Email, City, Country, Card
+    # Compute stable S.No. per user (oldest = 1). We sort by id ascending
+    # (since IDs are auto-incremented in insertion order), then map id -> sno.
+    sno_map = {
+        c["id"]: i + 1
+        for i, c in enumerate(sorted(contacts, key=lambda x: x["id"]))
+    }
+
+    # Column width ratios: S.No., Name, Company, Category, Phone, Email, City, Country, Card
     col_widths = [0.7, 2, 2.3, 1.6, 1.8, 2.3, 1.2, 1.2, 1.2]
 
     # Header row
     h = st.columns(col_widths)
-    h[0].markdown("**ID**")
+    h[0].markdown("**S.No**")
     h[1].markdown("**Name**")
     h[2].markdown("**Company**")
     h[3].markdown("**Category**")
@@ -191,6 +201,7 @@ def render_contact_rows(contacts, key_prefix):
 
     for contact in contacts:
         cid = contact["id"]
+        sno = sno_map[cid]
         name = contact.get("full_name") or "(no name)"
         company = contact.get("company_name") or "-"
         category = contact.get("service_category") or "-"
@@ -200,7 +211,7 @@ def render_contact_rows(contacts, key_prefix):
         country = contact.get("country") or "-"
 
         row = st.columns(col_widths)
-        row[0].write(f"#{cid}")
+        row[0].write(str(sno))
         row[1].write(name)
         row[2].write(company)
         row[3].write(category)
@@ -480,7 +491,7 @@ if selected_tab == "Upload & Scan":
                                     ok = db.update_contact_partial(user_email, duplicate["id"], edited)
                                     if ok:
                                         item["_saved"] = True
-                                        st.success(f"Updated existing contact #{duplicate['id']}")
+                                        st.success("Updated existing contact.")
                                         st.rerun()
                                     else:
                                         st.error("Update failed. Check console.")
@@ -488,7 +499,7 @@ if selected_tab == "Upload & Scan":
                                     edited["card_image_path"] = item["image_path"]
                                     new_id = db.insert_contact(user_email, edited)
                                     item["_saved"] = True
-                                    st.success(f"Saved as contact #{new_id}")
+                                    st.success("Contact saved.")
                                     st.rerun()
                         with c2:
                             if st.button("Discard", key=f"discard_{idx}"):
@@ -572,7 +583,15 @@ elif selected_tab == "All Contacts":
         st.markdown("---")
         st.subheader("Edit / Delete Contact")
         ids = [c["id"] for c in contacts]
-        labels = [f"#{c['id']} - {c.get('full_name') or '(no name)'} @ {c.get('company_name') or '(no company)'}" for c in contacts]
+        # Compute S.No. per user (oldest = 1) -- same logic as render_contact_rows
+        sno_map = {
+            c["id"]: i + 1
+            for i, c in enumerate(sorted(contacts, key=lambda x: x["id"]))
+        }
+        labels = [
+            f"S.No {sno_map[c['id']]} - {c.get('full_name') or '(no name)'} @ {c.get('company_name') or '(no company)'}"
+            for c in contacts
+        ]
         sel_idx = st.selectbox("Select a contact", range(len(ids)),
             format_func=lambda i: labels[i])
         sel_contact = contacts[sel_idx]
@@ -600,5 +619,5 @@ elif selected_tab == "All Contacts":
             with c2:
                 if st.button("Delete Contact", key=f"del_{sel_contact['id']}"):
                     db.delete_contact(user_email, sel_contact["id"])
-                    st.success(f"Deleted contact #{sel_contact['id']}.")
+                    st.success("Contact deleted.")
                     st.rerun()
