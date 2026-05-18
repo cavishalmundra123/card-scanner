@@ -13,10 +13,17 @@ jobs:
       - name: Ping Streamlit app
         run: |
           echo "Pinging Card Scanner app..."
-          curl -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             --max-time 120 \
             --retry 3 \
             --retry-delay 30 \
-            "https://card-scanner-vishal.streamlit.app"
-          echo ""
-          echo "Ping complete at $(date)"
+            "https://card-scanner-vishal.streamlit.app/")
+          echo "HTTP response code: $HTTP_CODE"
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "303" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "✅ App is alive (responded with $HTTP_CODE)"
+            exit 0
+          else
+            echo "❌ Unexpected response: $HTTP_CODE"
+            exit 1
+          fi
