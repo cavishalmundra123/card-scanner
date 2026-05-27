@@ -1,10 +1,10 @@
-name: Keep Streamlit App Awake
+name: Keep Streamlit App + Supabase Awake
 
 on:
   schedule:
-    # Runs every 6 hours (at 00:00, 06:00, 12:00, 18:00 UTC)
+    # Runs every 6 hours
     - cron: '0 */6 * * *'
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   ping:
@@ -12,18 +12,40 @@ jobs:
     steps:
       - name: Ping Streamlit app
         run: |
-          echo "Pinging Card Scanner app..."
+          echo "=== Pinging Streamlit app ==="
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             --max-time 120 \
             --retry 3 \
             --retry-delay 30 \
             "https://card-scanner-vishal.streamlit.app/")
-          echo "HTTP response code: $HTTP_CODE"
+          echo "Streamlit HTTP code: $HTTP_CODE"
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "303" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "✅ App is alive (responded with $HTTP_CODE)"
+            echo "✅ Streamlit app is alive"
+          else
+            echo "❌ Streamlit unexpected response: $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Ping Supabase database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          echo "=== Pinging Supabase ==="
+          HTTP_CODE=$(curl -s -o /tmp/supabase_response.txt -w "%{http_code}" \
+            --max-time 30 \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/contacts?select=id&limit=1")
+          echo "Supabase HTTP code: $HTTP_CODE"
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "206" ]; then
+            echo "✅ Supabase database is alive — query successful"
+          elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+            echo "⚠️ Auth issue — but Supabase responded. RLS blocking anon access (still counts as activity)."
             exit 0
           else
-            echo "❌ Unexpected response: $HTTP_CODE"
+            echo "❌ Supabase unexpected response: $HTTP_CODE"
+            cat /tmp/supabase_response.txt
             exit 1
           fi
