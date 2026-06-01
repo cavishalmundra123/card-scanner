@@ -2,30 +2,75 @@ name: Keep Streamlit App + Supabase Awake
 
 on:
   schedule:
-    # Runs every 6 hours
-    - cron: '0 */6 * * *'
+    # Every 4 hours (more frequent than before to be safe)
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Ping Streamlit app
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright
         run: |
-          echo "=== Pinging Streamlit app ==="
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            --max-time 120 \
-            --retry 3 \
-            --retry-delay 30 \
-            "https://card-scanner-vishal.streamlit.app/")
-          echo "Streamlit HTTP code: $HTTP_CODE"
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "303" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "✅ Streamlit app is alive"
-          else
-            echo "❌ Streamlit unexpected response: $HTTP_CODE"
-            exit 1
-          fi
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Wake Streamlit app (real browser session)
+        run: |
+          cat > wake.py << 'PYEOF'
+          import asyncio
+          import sys
+          from playwright.async_api import async_playwright
+
+          URL = "https://card-scanner-vishal.streamlit.app/"
+
+          async def main():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch(headless=True)
+                  context = await browser.new_context(
+                      user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                 "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                 "Chrome/120.0.0.0 Safari/537.36"
+                  )
+                  page = await context.new_page()
+                  print(f"Navigating to {URL}")
+                  await page.goto(URL, wait_until="domcontentloaded", timeout=180000)
+                  print(f"Page title: {await page.title()}")
+
+                  # Check if it's the sleep screen — if so, click the wake button
+                  try:
+                      wake_btn = page.get_by_role("button", name="Yes, get this app back up!")
+                      if await wake_btn.is_visible(timeout=5000):
+                          print("Sleep screen detected — clicking wake button")
+                          await wake_btn.click()
+                          print("Waiting for app to wake up...")
+                          await page.wait_for_timeout(60000)  # wait 60s for wake
+                  except Exception as e:
+                      print(f"No sleep screen (good): {e}")
+
+                  # Stay on the page to keep the WebSocket alive
+                  print("Holding page open for 45 seconds to register activity...")
+                  await page.wait_for_timeout(45000)
+
+                  # Confirm app loaded — look for the Streamlit app root
+                  content = await page.content()
+                  if "stApp" in content or "streamlit" in content.lower():
+                      print("✅ Streamlit app loaded successfully")
+                  else:
+                      print("⚠️ Page loaded but Streamlit markers not found")
+                      print(content[:500])
+
+                  await browser.close()
+
+          asyncio.run(main())
+          PYEOF
+          python wake.py
 
       - name: Ping Supabase database
         env:
@@ -40,9 +85,9 @@ jobs:
             "${SUPABASE_URL}/rest/v1/contacts?select=id&limit=1")
           echo "Supabase HTTP code: $HTTP_CODE"
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "206" ]; then
-            echo "✅ Supabase database is alive — query successful"
+            echo "✅ Supabase database is alive"
           elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
-            echo "⚠️ Auth issue — but Supabase responded. RLS blocking anon access (still counts as activity)."
+            echo "⚠️ Auth issue — but Supabase responded (still counts as activity)"
             exit 0
           else
             echo "❌ Supabase unexpected response: $HTTP_CODE"
