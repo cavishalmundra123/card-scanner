@@ -28,6 +28,16 @@ def _get_secret(key: str) -> str:
     return os.getenv(key) or _streamlit_secrets.get(key, "")
 
 
+class DBUnavailable(Exception):
+    """Raised when Supabase itself cannot be reached.
+
+    Distinct from "row not found". A paused Supabase project, a network
+    failure, or a bad API key all raise this - none of them mean the user
+    typed the wrong password.
+    """
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Connection (cached singleton)
 # ---------------------------------------------------------------------------
@@ -333,16 +343,21 @@ import bcrypt
 
 
 def get_user(username: str):
-    """Fetch a user record from Supabase by username. Returns dict or None."""
+    """Fetch a user record from Supabase by username.
+
+    Returns the user dict, or None if there is genuinely no such username.
+    Raises DBUnavailable if the database could not be reached at all.
+    """
     try:
         sb = get_client()
         response = sb.table("users").select("*").eq("username", username).limit(1).execute()
-        if response.data and len(response.data) > 0:
-            return response.data[0]
-        return None
     except Exception as e:
-        print(f"get_user error: {e}")
-        return None
+        print(f"get_user error (database unreachable): {e}")
+        raise DBUnavailable(str(e)) from e
+
+    if response.data and len(response.data) > 0:
+        return response.data[0]
+    return None
 
 
 def verify_password(plain: str, hashed: str) -> bool:

@@ -60,7 +60,19 @@ def show_login():
         if not username or not password:
             st.error("Please enter both username and password.")
             return
-        user = db.get_user(username)
+        try:
+            user = db.get_user(username)
+        except db.DBUnavailable as e:
+            st.error(
+                "**Cannot reach the database — this is not a password problem.**\n\n"
+                "The Supabase project is almost certainly paused (the free tier "
+                "pauses after 7 days of no activity). Open the Supabase dashboard "
+                "and click **Restore project**, wait a couple of minutes, then "
+                "sign in again."
+            )
+            st.caption(f"Technical detail: {e}")
+            return
+
         if not user:
             st.error("Invalid username or password.")
             return
@@ -288,7 +300,11 @@ with st.sidebar:
         cp_new = st.text_input("New password", type="password", key="cp_new")
         cp_confirm = st.text_input("Confirm new password", type="password", key="cp_confirm")
         if st.button("Update password", key="cp_btn", type="primary", use_container_width=True):
-            user = db.get_user(username)
+            try:
+                user = db.get_user(username)
+            except db.DBUnavailable as e:
+                st.error(f"Cannot reach the database right now: {e}")
+                st.stop()
             if not db.verify_password(cp_current, user["password_hash"]):
                 st.error("Current password is incorrect.")
             elif len(cp_new) < 8:
